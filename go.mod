@@ -3,12 +3,13 @@ module chakra
 go 1.15
 
 require (
-	github.com/google/gops v0.3.14 // indirect
-	github.com/gorilla/mux v1.8.0
-	github.com/gorilla/websocket v1.4.2
-	github.com/pion/rtp v1.6.2
-	github.com/pion/webrtc/v3 v3.0.0
-	github.com/shirou/gopsutil v3.20.11+incompatible // indirect
+	github.com/go-redis/redis/v8 v8.11.4
+	github.com/joho/godotenv v1.4.0
+	github.com/pion/webrtc/v3 v3.1.23
+	github.com/sakuraapp/protobuf v0.0.0-20220218035933-7c8b9d55a9a6
+	github.com/sakuraapp/pubsub v0.0.0-20220218184923-d077759d5c7f
+	github.com/sirupsen/logrus v1.8.1
 	github.com/teris-io/shortid v0.0.0-20201117134242-e59966efd125
-	golang.org/x/sys v0.0.0-20201214210602-f9fddec55a1e // indirect
+	github.com/vmihailenco/msgpack/v5 v5.3.5
+	google.golang.org/grpc v1.44.0
 )

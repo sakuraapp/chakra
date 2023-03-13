@@ -1,74 +1,80 @@
 package streammanager
 
 import (
-	"log"
-	"net"
-	"time"
-
-	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
+	log "github.com/sirupsen/logrus"
+	"net"
 )
 
 type Stream struct {
 	Id                string `json:"id"`
 	Name              string `json:"name"`
-	Port              int    `json:"port"`
+	Port              int  `json:"port"`
 	tracks            []*webrtc.TrackLocalStaticRTP
 	inbound           []byte
 	listener          *net.UDPConn
 	allowedHosts      []net.IP
 	stopped           chan bool
-	lastFrame         time.Time
-	ActiveConnections int
 }
 
-func NewStream(id string, name string, port int, allowedHosts []net.IP) *Stream {
+func NewStream(id string, name string, port int) *Stream {
 	return &Stream{
-		Id:                id,
-		Name:              name,
-		Port:              port,
-		tracks:            make([]*webrtc.TrackLocalStaticRTP, 0),
-		allowedHosts:      allowedHosts,
-		stopped:           make(chan bool),
-		lastFrame:         time.Now(),
-		ActiveConnections: 0,
+		Id:         id,
+		Name:       name,
+		Port:       port,
+		tracks:     []*webrtc.TrackLocalStaticRTP{},
+		stopped:    make(chan bool),
 	}
 }
 
-func (s *Stream) Start() {
-	addr := net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: s.Port}
+func (s *Stream) Start() error {
+	addr := net.UDPAddr{
+		IP: net.ParseIP("0.0.0.0"),
+		Port: int(s.Port),
+	}
 
 	listener, err := net.ListenUDP("udp", &addr)
 
-	s.listener = listener
-
 	if err != nil {
-		panic(err)
+		return err
 	}
+
+	s.listener = listener
 
 	log.Printf("Stream listening on port %v", s.Port)
 
 	videoTrack, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: "video/h264"}, "video", "pion")
 
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	s.tracks = append(s.tracks, videoTrack)
 	s.inbound = make([]byte, 4096)
 
-	go s.Read()
-	go s.Handle()
+	go func() {
+		err := s.Handle()
+
+		if err != nil {
+			log.WithError(err).Error("Failed to handle incoming data")
+		}
+	}()
+
+	return nil
 }
 
-func (s *Stream) Stop() {
-	if err := s.listener.Close(); err != nil {
-		panic(err)
+func (s *Stream) Stop() error {
+	s.stopped <- true
+
+	err := s.listener.Close()
+
+	if err != nil {
+		return err
 	} else {
-		log.Print("Stopped stream on port ", s.Port)
+		log.Printf("Stopped stream on port %v", s.Port)
 	}
 
-	s.stopped <- true
+	return nil
 }
 
 func (s *Stream) CreatePeer(offer webrtc.SessionDescription) (*webrtc.SessionDescription, error) {
@@ -93,18 +99,6 @@ func (s *Stream) CreatePeer(offer webrtc.SessionDescription) (*webrtc.SessionDes
 
 		go s.HandleRTCP(rtpSender)
 	}
-
-	peerConnection.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-		currentState := state.String()
-
-		if currentState == "connected" {
-			s.ActiveConnections++
-		} else if currentState == "disconnected" {
-			s.ActiveConnections--
-		}
-
-		log.Print(currentState)
-	})
 
 	if err = peerConnection.SetRemoteDescription(offer); err != nil {
 		return nil, err
@@ -133,42 +127,6 @@ func (s *Stream) HandleRTCP(rtpSender *webrtc.RTPSender) {
 	for {
 		if _, _, rtcpErr := rtpSender.Read(rtcpBuf); rtcpErr != nil {
 			return
-		}
-	}
-}
-
-func (s *Stream) IsAllowed(ip net.IP) bool {
-	if !VerifyHosts {
-		return true
-	}
-
-	for _, addr := range s.allowedHosts {
-		if ip.Equal(addr) {
-			return true
-		}
-	}
-
-	return false
-}
-
-func (s *Stream) Read() {
-	n, addr, err := s.listener.ReadFromUDP(s.inbound)
-
-	if addr != nil && s.IsAllowed(addr.IP) {
-		s.lastFrame = time.Now()
-
-		if err != nil {
-			if <-s.stopped {
-				return
-			} else {
-				panic(err)
-			}
-		}
-
-		packet := &rtp.Packet{}
-
-		if err = packet.Unmarshal(s.inbound[:n]); err != nil {
-			panic(err)
 		}
 	}
 }
